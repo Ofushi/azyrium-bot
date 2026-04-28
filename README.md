@@ -1,4 +1,4 @@
-# Aeterna — Discord Bot
+# Azyrium — Discord Bot
 
 A modular, production-ready Discord bot built for the **NightfallCraft — The Casket of Reveries** Minecraft server. Built with [discord.js v14](https://discord.js.org/) and a clean plugin architecture.
 
@@ -15,7 +15,7 @@ A modular, production-ready Discord bot built for the **NightfallCraft — The C
 | `automod` | Automatic profanity filter with progressive sanctions |
 | `infractions` | View and reset player infractions |
 | `minecraft-status` | Live Minecraft server status with auto-updating message |
-| `ai-chat` | Aeterna AI powered by Groq (Llama 3) |
+| `ai-chat` | Azyrium AI powered by Groq (Llama 3) |
 | `giveaway` | Giveaway system with automatic winner selection |
 | `levels` | XP and level system with leaderboard |
 | `welcome` | Welcome message on member join |
@@ -73,7 +73,7 @@ All configuration is done via environment variables. See `.env.example` for the 
 | `CLIENT_ID` | Discord application ID |
 | `GUILD_ID` | Your server ID |
 | `DATABASE_URL` | PostgreSQL connection string |
-| `GROQ_API_KEY` | Groq API key for Aeterna AI |
+| `GROQ_API_KEY` | Groq API key for Azyrium AI |
 | `INFO_LINKS` | Links for `/info` — format: `Label=URL,Label=URL` |
 | `ROLE_REACTION_MAP` | Role reactions — format: `MSG_ID:EMOJI=ROLE_ID` |
 | `TICKET_CATEGORY_ID` | Category for ticket channels |
@@ -84,8 +84,8 @@ All configuration is done via environment variables. See `.env.example` for the 
 | `CONTESTATION_LOG_CHANNEL_ID` | Channel for contestation logs |
 | `CONTESTATION_ADMIN_ROLE_ID` | Role pinged on new contestations |
 | `WELCOME_CHANNEL_ID` | Channel for welcome messages |
-| `AI_TALK_CHANNEL_ID` | Channel for Aeterna community chat |
-| `AI_STAFF_CHANNEL_ID` | Channel for Aeterna staff chat |
+| `AI_TALK_CHANNEL_ID` | Channel for Azyrium community chat |
+| `AI_STAFF_CHANNEL_ID` | Channel for Azyrium staff chat |
 | `LEVELS_COMMAND_CHANNEL_ID` | Channel for level-up notifications |
 | `AUTOMOD_LOG_CHANNEL_ID` | Channel for automod logs |
 
