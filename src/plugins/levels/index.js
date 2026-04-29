@@ -18,39 +18,61 @@ function levelFromXP(xp) {
 }
 
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS levels (
-      user_id TEXT PRIMARY KEY,
-      user_tag TEXT,
-      xp INTEGER DEFAULT 0,
-      level INTEGER DEFAULT 1,
-      last_xp_at BIGINT DEFAULT 0
-    );
-  `);
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS levels (
+        user_id TEXT PRIMARY KEY,
+        user_tag TEXT,
+        xp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        last_xp_at BIGINT DEFAULT 0
+      );
+    `);
+    console.log('[levels] Database initialized.');
+  } catch (err) {
+    console.error('[levels] Database init error:', err.message);
+  }
 }
 
 async function getUser(userId, userTag) {
-  const res = await pool.query('SELECT * FROM levels WHERE user_id = $1', [userId]);
-  if (res.rows.length === 0) {
-    await pool.query('INSERT INTO levels (user_id, user_tag, xp, level, last_xp_at) VALUES ($1, $2, 0, 1, 0)', [userId, userTag]);
-    return { user_id: userId, user_tag: userTag, xp: 0, level: 1, last_xp_at: 0 };
+  try {
+    const res = await pool.query('SELECT * FROM levels WHERE user_id = $1', [userId]);
+    if (res.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO levels (user_id, user_tag, xp, level, last_xp_at) VALUES ($1, $2, 0, 1, 0)',
+        [userId, userTag]
+      );
+      return { user_id: userId, user_tag: userTag, xp: 0, level: 1, last_xp_at: 0 };
+    }
+    return res.rows[0];
+  } catch (err) {
+    console.error('[levels] getUser error:', err.message);
+    throw err;
   }
-  return res.rows[0];
 }
 
 async function addXP(userId, userTag) {
-  const user = await getUser(userId, userTag);
-  if (Date.now() - parseInt(user.last_xp_at) < COOLDOWN_MS) return null;
-  const newXP    = parseInt(user.xp) + XP_PER_MESSAGE;
-  const newLevel = levelFromXP(newXP);
-  const levelUp  = newLevel > parseInt(user.level);
-  await pool.query('UPDATE levels SET xp = $1, level = $2, last_xp_at = $3, user_tag = $4 WHERE user_id = $5', [newXP, newLevel, Date.now(), userTag, userId]);
-  return { xp: newXP, level: newLevel, levelUp };
+  try {
+    const user = await getUser(userId, userTag);
+    if (Date.now() - parseInt(user.last_xp_at) < COOLDOWN_MS) return null;
+    const newXP    = parseInt(user.xp) + XP_PER_MESSAGE;
+    const newLevel = levelFromXP(newXP);
+    const levelUp  = newLevel > parseInt(user.level);
+    await pool.query(
+      'UPDATE levels SET xp = $1, level = $2, last_xp_at = $3, user_tag = $4 WHERE user_id = $5',
+      [newXP, newLevel, Date.now(), userTag, userId]
+    );
+    return { xp: newXP, level: newLevel, levelUp };
+  } catch (err) {
+    console.error('[levels] addXP error:', err.message);
+    return null;
+  }
 }
 
 module.exports = {
   name: 'levels',
-  version: '1.1.0',
+  version: '1.2.0',
+
   commands: [
     {
       data: new SlashCommandBuilder()
@@ -59,10 +81,9 @@ module.exports = {
         .addUserOption(opt => opt.setName('user').setDescription('User to check').setRequired(false)),
 
       async execute(interaction) {
-        // Reply immediately to avoid timeout
         await interaction.deferReply({ flags: 64 });
-
         const target = interaction.options.getUser('user') ?? interaction.user;
+        console.log(`[levels] /rank called for ${target.tag}`);
 
         try {
           const user     = await getUser(target.id, target.tag);
@@ -70,21 +91,27 @@ module.exports = {
           const level    = parseInt(user.level);
           const xpNext   = xpForLevel(level + 1);
           const xpCurr   = xpForLevel(level);
-          const progress = xpNext === xpCurr ? 100 : Math.floor(((xp - xpCurr) / (xpNext - xpCurr)) * 100);
-          const filled   = Math.floor(progress / 10);
+          const range    = xpNext - xpCurr;
+          const progress = range <= 0 ? 100 : Math.floor(((xp - xpCurr) / range) * 100);
+          const filled   = Math.min(10, Math.floor(progress / 10));
           const bar      = '█'.repeat(filled) + '░'.repeat(10 - filled);
 
-          await interaction.editReply({ embeds: [new EmbedBuilder()
-            .setTitle(`🏆 ${target.username}'s Rank`)
-            .setColor(0x5865f2)
-            .setThumbnail(target.displayAvatarURL({ dynamic: true }))
-            .addFields(
-              { name: '⭐ Level',    value: `**${level}**`,            inline: true },
-              { name: '✨ XP',       value: `**${xp}** / ${xpNext}`,   inline: true },
-              { name: '📊 Progress', value: `\`${bar}\` ${progress}%`, inline: false },
-            ).setTimestamp()] });
+          console.log(`[levels] rank data: level=${level}, xp=${xp}, progress=${progress}%`);
+
+          await interaction.editReply({
+            embeds: [new EmbedBuilder()
+              .setTitle(`🏆 ${target.username}'s Rank`)
+              .setColor(0x5865f2)
+              .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+              .addFields(
+                { name: '⭐ Level',    value: `**${level}**`,           inline: true },
+                { name: '✨ XP',       value: `**${xp}** / ${xpNext}`,  inline: true },
+                { name: '📊 Progress', value: `\`${bar}\` ${progress}%`, inline: false },
+              )
+              .setTimestamp()],
+          });
         } catch (err) {
-          console.error('[levels] rank error:', err.message);
+          console.error('[levels] /rank error:', err.message);
           await interaction.editReply({ content: '❌ Error fetching rank.' });
         }
       },
@@ -99,9 +126,19 @@ module.exports = {
         try {
           const rows   = (await pool.query('SELECT * FROM levels ORDER BY xp DESC LIMIT 10')).rows;
           const medals = ['🥇', '🥈', '🥉'];
-          const desc   = rows.map((r, i) => `${medals[i] ?? `**${i + 1}.**`} <@${r.user_id}> — Level **${r.level}** (${r.xp} XP)`).join('\n');
-          await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🏅 Leaderboard — Top 10').setDescription(desc || 'No data yet.').setColor(0xfee75c).setTimestamp()] });
-        } catch {
+          const desc   = rows.length
+            ? rows.map((r, i) => `${medals[i] ?? `**${i + 1}.**`} <@${r.user_id}> — Level **${r.level}** (${r.xp} XP)`).join('\n')
+            : 'No data yet.';
+
+          await interaction.editReply({
+            embeds: [new EmbedBuilder()
+              .setTitle('🏅 Leaderboard — Top 10')
+              .setDescription(desc)
+              .setColor(0xfee75c)
+              .setTimestamp()],
+          });
+        } catch (err) {
+          console.error('[levels] leaderboard error:', err.message);
           await interaction.editReply({ content: '❌ Error fetching leaderboard.' });
         }
       },
@@ -117,13 +154,18 @@ module.exports = {
         if (!result?.levelUp) return;
         const channel = client.channels.cache.get(process.env.LEVELS_COMMAND_CHANNEL_ID);
         if (!channel) return;
-        await channel.send({ embeds: [new EmbedBuilder()
-          .setTitle('⭐ Level Up!')
-          .setDescription(`${message.author} reached **Level ${result.level}**!`)
-          .setColor(0x5865f2).setTimestamp()] });
+        await channel.send({
+          embeds: [new EmbedBuilder()
+            .setTitle('⭐ Level Up!')
+            .setDescription(`${message.author} reached **Level ${result.level}**!`)
+            .setColor(0x5865f2)
+            .setTimestamp()],
+        });
       } catch {}
     },
   }],
 
-  async init() { await initDB(); },
+  async init() {
+    await initDB();
+  },
 };
