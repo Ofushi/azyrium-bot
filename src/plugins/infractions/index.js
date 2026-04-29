@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('disc
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: (process.env.DATABASE_URL ?? '').replace('postgres://', 'postgresql://'),
   ssl: { rejectUnauthorized: false },
 });
 
@@ -10,7 +10,7 @@ const SANCTIONS = ['1️⃣ Warning', '2️⃣ Last Warning', '3️⃣ Mute 10mi
 
 module.exports = {
   name: 'infractions',
-  version: '1.0.0',
+  version: '1.1.0',
   commands: [{
     data: new SlashCommandBuilder()
       .setName('infractions')
@@ -64,7 +64,7 @@ module.exports = {
             .setColor(0x57f287).setTimestamp()] });
         }
       } catch (err) {
-        console.error('[infractions] Error:', err.message);
+        console.error('[infractions] error:', err.message);
         await interaction.editReply({ content: `❌ Database error: ${err.message}` });
       }
     },

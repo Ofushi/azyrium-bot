@@ -7,24 +7,29 @@ const BAN_DURATION_MS   = 7 * 24 * 60 * 60 * 1000;
 const RESET_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: (process.env.DATABASE_URL ?? '').replace('postgres://', 'postgresql://'),
   ssl: { rejectUnauthorized: false },
 });
 
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS infractions (
-      user_id TEXT PRIMARY KEY,
-      user_tag TEXT,
-      count INTEGER DEFAULT 0,
-      reset_at BIGINT
-    );
-    CREATE TABLE IF NOT EXISTS pending_invites (
-      user_id TEXT PRIMARY KEY,
-      user_tag TEXT,
-      send_at BIGINT
-    );
-  `);
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS infractions (
+        user_id TEXT PRIMARY KEY,
+        user_tag TEXT,
+        count INTEGER DEFAULT 0,
+        reset_at BIGINT
+      );
+      CREATE TABLE IF NOT EXISTS pending_invites (
+        user_id TEXT PRIMARY KEY,
+        user_tag TEXT,
+        send_at BIGINT
+      );
+    `);
+    console.log('[automod] Database initialized.');
+  } catch (err) {
+    console.error('[automod] Database init error:', err.message);
+  }
 }
 
 async function getCount(userId, userTag) {
@@ -41,7 +46,7 @@ async function getCount(userId, userTag) {
 }
 
 async function addInfraction(userId, userTag) {
-  const count = await getCount(userId, userTag);
+  const count    = await getCount(userId, userTag);
   const newCount = count + 1;
   await pool.query('UPDATE infractions SET count = $1, user_tag = $2 WHERE user_id = $3', [newCount, userTag, userId]);
   return newCount;
@@ -91,8 +96,8 @@ async function logAction(guild, user, action, count) {
       .setColor(colors[action] ?? 0x5865f2)
       .addFields(
         { name: '👤 User',       value: `${user.tag} (${user.id})`, inline: true },
-        { name: '⚠️ Infraction', value: `#${count} this week`,       inline: true },
-        { name: '📋 Reason',     value: 'Inappropriate language',    inline: false },
+        { name: '⚠️ Infraction', value: `#${count} this week`,      inline: true },
+        { name: '📋 Reason',     value: 'Inappropriate language',   inline: false },
       ).setTimestamp()] });
   } catch {}
 }
@@ -132,7 +137,10 @@ async function applySanction(message, count) {
     try {
       await dm(user, new EmbedBuilder().setTitle('🔨 Banned — 7 days').setDescription(`Hello **${user.username}**, you have been banned for **7 days**. You will receive an invite once your ban expires.`).setColor(0x000000).setTimestamp());
       await member.ban({ reason: 'AutoMod — repeated inappropriate language', deleteMessageDays: 1 });
-      await pool.query('INSERT INTO pending_invites (user_id, user_tag, send_at) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET send_at = $3', [user.id, user.tag, Date.now() + BAN_DURATION_MS]);
+      await pool.query(
+        'INSERT INTO pending_invites (user_id, user_tag, send_at) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET send_at = $3',
+        [user.id, user.tag, Date.now() + BAN_DURATION_MS]
+      );
       await logAction(guild, user, 'Ban 7 days', count);
     } catch {}
   }
@@ -151,7 +159,7 @@ async function onMessage(message, client) {
 
 module.exports = {
   name: 'automod',
-  version: '3.0.0',
+  version: '3.1.0',
   events: [{ name: 'messageCreate', execute: onMessage }],
   async init(client) {
     await initDB();

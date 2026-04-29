@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: (process.env.DATABASE_URL ?? '').replace('postgres://', 'postgresql://'),
   ssl: { rejectUnauthorized: false },
 });
 
@@ -35,20 +35,15 @@ async function initDB() {
 }
 
 async function getUser(userId, userTag) {
-  try {
-    const res = await pool.query('SELECT * FROM levels WHERE user_id = $1', [userId]);
-    if (res.rows.length === 0) {
-      await pool.query(
-        'INSERT INTO levels (user_id, user_tag, xp, level, last_xp_at) VALUES ($1, $2, 0, 1, 0)',
-        [userId, userTag]
-      );
-      return { user_id: userId, user_tag: userTag, xp: 0, level: 1, last_xp_at: 0 };
-    }
-    return res.rows[0];
-  } catch (err) {
-    console.error('[levels] getUser error:', err.message);
-    throw err;
+  const res = await pool.query('SELECT * FROM levels WHERE user_id = $1', [userId]);
+  if (res.rows.length === 0) {
+    await pool.query(
+      'INSERT INTO levels (user_id, user_tag, xp, level, last_xp_at) VALUES ($1, $2, 0, 1, 0)',
+      [userId, userTag]
+    );
+    return { user_id: userId, user_tag: userTag, xp: 0, level: 1, last_xp_at: 0 };
   }
+  return res.rows[0];
 }
 
 async function addXP(userId, userTag) {
@@ -71,7 +66,7 @@ async function addXP(userId, userTag) {
 
 module.exports = {
   name: 'levels',
-  version: '1.2.0',
+  version: '1.3.0',
 
   commands: [
     {
@@ -83,7 +78,6 @@ module.exports = {
       async execute(interaction) {
         await interaction.deferReply({ flags: 64 });
         const target = interaction.options.getUser('user') ?? interaction.user;
-        console.log(`[levels] /rank called for ${target.tag}`);
 
         try {
           const user     = await getUser(target.id, target.tag);
@@ -96,16 +90,14 @@ module.exports = {
           const filled   = Math.min(10, Math.floor(progress / 10));
           const bar      = '█'.repeat(filled) + '░'.repeat(10 - filled);
 
-          console.log(`[levels] rank data: level=${level}, xp=${xp}, progress=${progress}%`);
-
           await interaction.editReply({
             embeds: [new EmbedBuilder()
               .setTitle(`🏆 ${target.username}'s Rank`)
               .setColor(0x5865f2)
               .setThumbnail(target.displayAvatarURL({ dynamic: true }))
               .addFields(
-                { name: '⭐ Level',    value: `**${level}**`,           inline: true },
-                { name: '✨ XP',       value: `**${xp}** / ${xpNext}`,  inline: true },
+                { name: '⭐ Level',    value: `**${level}**`,            inline: true },
+                { name: '✨ XP',       value: `**${xp}** / ${xpNext}`,   inline: true },
                 { name: '📊 Progress', value: `\`${bar}\` ${progress}%`, inline: false },
               )
               .setTimestamp()],
@@ -165,7 +157,5 @@ module.exports = {
     },
   }],
 
-  async init() {
-    await initDB();
-  },
+  async init() { await initDB(); },
 };
