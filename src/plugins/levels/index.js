@@ -45,12 +45,12 @@ async function addXP(userId, userTag) {
   const newLevel = levelFromXP(newXP);
   const levelUp  = newLevel > parseInt(user.level);
   await pool.query('UPDATE levels SET xp = $1, level = $2, last_xp_at = $3, user_tag = $4 WHERE user_id = $5', [newXP, newLevel, Date.now(), userTag, userId]);
-  return { xp: newXP, level: newLevel, levelUp, oldLevel: parseInt(user.level) };
+  return { xp: newXP, level: newLevel, levelUp };
 }
 
 module.exports = {
   name: 'levels',
-  version: '1.0.0',
+  version: '1.1.0',
   commands: [
     {
       data: new SlashCommandBuilder()
@@ -59,7 +59,9 @@ module.exports = {
         .addUserOption(opt => opt.setName('user').setDescription('User to check').setRequired(false)),
 
       async execute(interaction) {
+        // Reply immediately to avoid timeout
         await interaction.deferReply({ flags: 64 });
+
         const target = interaction.options.getUser('user') ?? interaction.user;
 
         try {
@@ -68,7 +70,7 @@ module.exports = {
           const level    = parseInt(user.level);
           const xpNext   = xpForLevel(level + 1);
           const xpCurr   = xpForLevel(level);
-          const progress = Math.floor(((xp - xpCurr) / (xpNext - xpCurr)) * 100);
+          const progress = xpNext === xpCurr ? 100 : Math.floor(((xp - xpCurr) / (xpNext - xpCurr)) * 100);
           const filled   = Math.floor(progress / 10);
           const bar      = '█'.repeat(filled) + '░'.repeat(10 - filled);
 
@@ -82,6 +84,7 @@ module.exports = {
               { name: '📊 Progress', value: `\`${bar}\` ${progress}%`, inline: false },
             ).setTimestamp()] });
         } catch (err) {
+          console.error('[levels] rank error:', err.message);
           await interaction.editReply({ content: '❌ Error fetching rank.' });
         }
       },
@@ -94,9 +97,9 @@ module.exports = {
       async execute(interaction) {
         await interaction.deferReply({ flags: 64 });
         try {
-          const rows    = (await pool.query('SELECT * FROM levels ORDER BY xp DESC LIMIT 10')).rows;
-          const medals  = ['🥇', '🥈', '🥉'];
-          const desc    = rows.map((r, i) => `${medals[i] ?? `**${i + 1}.**`} <@${r.user_id}> — Level **${r.level}** (${r.xp} XP)`).join('\n');
+          const rows   = (await pool.query('SELECT * FROM levels ORDER BY xp DESC LIMIT 10')).rows;
+          const medals = ['🥇', '🥈', '🥉'];
+          const desc   = rows.map((r, i) => `${medals[i] ?? `**${i + 1}.**`} <@${r.user_id}> — Level **${r.level}** (${r.xp} XP)`).join('\n');
           await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🏅 Leaderboard — Top 10').setDescription(desc || 'No data yet.').setColor(0xfee75c).setTimestamp()] });
         } catch {
           await interaction.editReply({ content: '❌ Error fetching leaderboard.' });
@@ -112,10 +115,8 @@ module.exports = {
       try {
         const result = await addXP(message.author.id, message.author.tag);
         if (!result?.levelUp) return;
-
         const channel = client.channels.cache.get(process.env.LEVELS_COMMAND_CHANNEL_ID);
         if (!channel) return;
-
         await channel.send({ embeds: [new EmbedBuilder()
           .setTitle('⭐ Level Up!')
           .setDescription(`${message.author} reached **Level ${result.level}**!`)
