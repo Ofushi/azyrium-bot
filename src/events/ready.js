@@ -6,6 +6,6 @@ module.exports = {
   execute(client) {
     console.log(`[Bot] Online as ${client.user.tag}`);
     console.log(`[Bot] Plugins: ${client.plugins.size} | Commands: ${client.commands.size}`);
-    client.user.setActivity('🎮 NightfallCraft', { type: ActivityType.Playing });
+    client.user.setActivity('🎮 Azyrium Server', { type: ActivityType.Playing });
   },
 };
